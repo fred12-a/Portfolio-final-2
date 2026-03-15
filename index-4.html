@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fred Mourad — Automation Engineer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:15px;scroll-behavior:smooth}
+:root{
+  --void:#050508;
+  --deep:#08090F;
+  --surface:#0C0E18;
+  --raised:#111525;
+  --float:#161C2E;
+  --wire:rgba(255,255,255,0.055);
+  --wire2:rgba(255,255,255,0.11);
+  --fire:#FF5C35;
+  --fire2:#FF7A5A;
+  --firedim:rgba(255,92,53,0.09);
+  --fireglow:rgba(255,92,53,0.2);
+  --ice:#00CFFF;
+  --icedim:rgba(0,207,255,0.08);
+  --lime:#2DFF8F;
+  --limedim:rgba(45,255,143,0.08);
+  --violet:#B06EFF;
+  --vdim:rgba(176,110,255,0.09);
+  --ink:#E4E8FF;
+  --ghost:#3A4663;
+  --ghost2:#6B7A99;
+  --fd:'Bebas Neue',sans-serif;
+  --fb:'Manrope',sans-serif;
+  --fm:'DM Mono',monospace;
+}
+body{
+  background:var(--void);color:var(--ink);
+  font-family:var(--fb);font-size:1rem;line-height:1.7;
+  overflow-x:hidden;cursor:none;
+  -webkit-font-smoothing:antialiased;
+}
+::-webkit-scrollbar{width:2px}
+::-webkit-scrollbar-track{background:var(--void)}
+::-webkit-scrollbar-thumb{background:var(--fire);border-radius:1px}
+#root{min-height:100vh}
+
+/* CURSOR */
+.cur{position:fixed;pointer-events:none;z-index:9999;mix-blend-mode:difference}
+.cur-dot{width:8px;height:8px;background:white;border-radius:50%;transform:translate(-50%,-50%)}
+.cur-ring{width:40px;height:40px;border:1px solid rgba(255,255,255,.5);border-radius:50%;transform:translate(-50%,-50%);transition:width .3s,height .3s,border-color .3s}
+.cur-ring.big{width:64px;height:64px;border-color:var(--fire)}
+
+/* GRAIN */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:998;opacity:.028;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:200px 200px;animation:grain 1.2s steps(2) infinite;
+}
+@keyframes grain{0%,100%{transform:translate(0,0)}10%{transform:translate(-1%,-1%)}20%{transform:translate(1%,1%)}30%{transform:translate(-1%,1%)}40%{transform:translate(1%,-1%)}50%{transform:translate(-2%,0)}60%{transform:translate(2%,0)}70%{transform:translate(0,-2%)}80%{transform:translate(0,2%)}90%{transform:translate(-1%,0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="cur" id="cur"><div class="cur-dot" id="curDot"></div></div>
+<div class="cur" id="curRing"><div class="cur-ring" id="curRingEl"></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+/* ── CURSOR ── */
+(function(){
+  let mx=0,my=0,rx=0,ry=0;
+  const dot=document.getElementById('cur'),ring=document.getElementById('curRing'),ringEl=document.getElementById('curRingEl');
+  document.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;dot.style.transform=`translate(${mx}px,${my}px)`;});
+  (function animRing(){rx+=(mx-rx)*.12;ry+=(my-ry)*.12;ring.style.transform=`translate(${rx}px,${ry}px)`;requestAnimationFrame(animRing);})();
+  document.addEventListener('mouseover',e=>{if(e.target.matches('a,button,[data-hover]'))ringEl.classList.add('big');else ringEl.classList.remove('big');});
+})();
+
+/* ── PARTICLE CANVAS ── */
+function ParticleField(){
+  const cv=useRef();
+  useEffect(()=>{
+    const c=cv.current,ctx=c.getContext('2d');
+    let W,H,pts=[],mouse={x:-999,y:-999},raf;
+    const N=70;
+    const resize=()=>{W=c.width=innerWidth;H=c.height=innerHeight;};
+    const init=()=>{pts=Array.from({length:N},()=>({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.22,vy:(Math.random()-.5)*.22,r:Math.random()*1.8+.8,o:Math.random()*.5+.15,p:Math.random()*Math.PI*2,ps:.012+Math.random()*.015}));};
+    document.addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;});
+    const draw=()=>{
+      ctx.clearRect(0,0,W,H);
+      pts.forEach(p=>{
+        p.x+=p.vx;p.y+=p.vy;p.p+=p.ps;
+        const dx=mouse.x-p.x,dy=mouse.y-p.y,d=Math.sqrt(dx*dx+dy*dy);
+        if(d<120){const f=(120-d)/120*.008;p.vx+=dx*f;p.vy+=dy*f;}
+        p.vx*=.998;p.vy*=.998;
+        if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
+        const sc=1+Math.sin(p.p)*.3;
+        ctx.beginPath();ctx.arc(p.x,p.y,p.r*sc,0,Math.PI*2);
+        ctx.fillStyle=`rgba(255,92,53,${p.o*(1+Math.sin(p.p)*.4)})`;ctx.fill();
+      });
+      for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
+        const a=pts[i],b=pts[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.sqrt(dx*dx+dy*dy);
+        if(d<110){
+          ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+          ctx.strokeStyle=`rgba(255,92,53,${(1-d/110)*.08})`;ctx.lineWidth=.6;ctx.stroke();
+        }
+      }
+      raf=requestAnimationFrame(draw);
+    };
+    resize();init();draw();
+    window.addEventListener('resize',()=>{resize();init();});
+    return()=>{cancelAnimationFrame(raf);};
+  },[]);
+  return <canvas ref={cv} style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,opacity:.7}}/>;
+}
+
+/* ── HOOKS ── */
+function useReveal(threshold=.1){
+  const ref=useRef();const[v,setV]=useState(false);
+  useEffect(()=>{
+    const obs=new IntersectionObserver(([e])=>{if(e.isIntersecting){setV(true);obs.disconnect();}},{threshold});
+    if(ref.current)obs.observe(ref.current);
+    return()=>obs.disconnect();
+  },[]);
+  return[ref,v];
+}
+
+function useCounter(target,duration=2000,start=false){
+  const[val,setVal]=useState(0);
+  useEffect(()=>{
+    if(!start)return;
+    let s=0,st=null;
+    const step=()=>{s+=target/(duration/16);if(s>=target){setVal(target);return;}setVal(Math.floor(s));st=requestAnimationFrame(step);};
+    st=requestAnimationFrame(step);
+    return()=>cancelAnimationFrame(st);
+  },[start,target,duration]);
+  return val;
+}
+
+/* ── REVEAL ── */
+function R({children,delay=0,y=32,x=0,style={}}){
+  const[ref,v]=useReveal();
+  return(
+    <div ref={ref} style={{opacity:v?1:0,transform:v?'none':`translate(${x}px,${y}px)`,transition:`opacity .75s cubic-bezier(.16,1,.3,1) ${delay}s, transform .75s cubic-bezier(.16,1,.3,1) ${delay}s`,...style}}>
+      {children}
+    </div>
+  );
+}
+
+/* ── NAV ── */
+function Nav({page,go}){
+  const[s,setS]=useState(false);
+  useEffect(()=>{const h=()=>setS(scrollY>60);window.addEventListener('scroll',h);return()=>window.removeEventListener('scroll',h);},[]);
+  return(
+    <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:900,height:64,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 clamp(1.5rem,5%,4rem)',background:s?'rgba(5,5,8,.96)':'transparent',backdropFilter:s?'blur(24px)':'none',borderBottom:s?'1px solid rgba(255,255,255,.06)':'none',transition:'all .4s'}}>
+      <div onClick={()=>go('home')} data-hover style={{fontFamily:'var(--fd)',fontSize:'1.3rem',letterSpacing:'.08em',color:'var(--ink)',cursor:'pointer',display:'flex',alignItems:'center',gap:'.5rem'}}>
+        <span style={{width:8,height:8,borderRadius:'50%',background:'var(--fire)',boxShadow:'0 0 10px var(--fire)',display:'inline-block',animation:'pulse 2s infinite'}}/>
+        FRED<span style={{color:'var(--fire)'}}>.</span>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:'.15rem'}}>
+        {[['home','ACCUEIL'],['projets','PROJETS'],['moi','À PROPOS']].map(([id,l])=>(
+          <div key={id} onClick={()=>go(id)} data-hover style={{padding:'.4rem .9rem',borderRadius:6,fontFamily:'var(--fm)',fontSize:'.72rem',letterSpacing:'.12em',color:page===id?'var(--fire)':'var(--ghost2)',background:page===id?'rgba(255,92,53,.08)':'transparent',cursor:'pointer',transition:'all .2s'}}>{l}</div>
+        ))}
+        <div onClick={()=>go('moi','contact')} data-hover style={{marginLeft:'.6rem',padding:'.42rem 1.2rem',borderRadius:6,background:'var(--fire)',color:'#050508',fontFamily:'var(--fm)',fontSize:'.72rem',letterSpacing:'.1em',fontWeight:700,cursor:'pointer',boxShadow:'0 0 24px rgba(255,92,53,.3)',transition:'all .22s'}}>
+          CONTACT
+        </div>
+      </div>
+      <style>{`@keyframes pulse{0%,100%{box-shadow:0 0 10px var(--fire)}50%{box-shadow:0 0 20px var(--fire),0 0 40px rgba(255,92,53,.3)}}`}</style>
+    </nav>
+  );
+}
+
+/* ── MARQUEE ── */
+function Marquee(){
+  const items=['Make.com','n8n','Telegram API','Webhooks','LinkedIn API','Groq IA','Notion','Google Workspace','WhatsApp API','REST API'];
+  const repeated=[...items,...items];
+  return(
+    <div style={{overflow:'hidden',borderTop:'1px solid var(--wire)',borderBottom:'1px solid var(--wire)',padding:'.7rem 0',background:'var(--deep)',position:'relative',zIndex:1}}>
+      <div style={{display:'flex',gap:'3rem',animation:'marquee 22s linear infinite',width:'max-content'}}>
+        {repeated.map((t,i)=>(
+          <span key={i} style={{fontFamily:'var(--fm)',fontSize:'.68rem',letterSpacing:'.14em',color:'var(--ghost)',textTransform:'uppercase',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:'.7rem'}}>
+            <span style={{width:4,height:4,borderRadius:'50%',background:'var(--fire)',display:'inline-block'}}/>
+            {t}
+          </span>
+        ))}
+      </div>
+      <style>{`@keyframes marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
+    </div>
+  );
+}
+
+/* ── LIVE TERMINAL ── */
+function LiveTerminal(){
+  const lines=[
+    {t:800,  text:'$ make scenario --name="linkedin_bot"',c:'var(--fire)'},
+    {t:1600, text:'> Connecting to Notion API... ✓',c:'var(--lime)'},
+    {t:2400, text:'> Fetching entries with status="À générer"',c:'var(--ghost2)'},
+    {t:3200, text:'> Found 3 entries. Processing...',c:'var(--ghost2)'},
+    {t:4000, text:'> Groq AI generating post [1/3]... ✓',c:'var(--lime)'},
+    {t:4800, text:'> Groq AI generating post [2/3]... ✓',c:'var(--lime)'},
+    {t:5600, text:'> Groq AI generating post [3/3]... ✓',c:'var(--lime)'},
+    {t:6400, text:'> LinkedIn API publishing scheduled posts...',c:'var(--ghost2)'},
+    {t:7200, text:'> 3/3 posts published successfully ✓',c:'var(--lime)'},
+    {t:8000, text:'> Updating Notion status to "Publié"...',c:'var(--ghost2)'},
+    {t:8800, text:'✓ Workflow complete. Next run: tomorrow 21:00',c:'var(--fire)'},
+  ];
+  const[shown,setShown]=useState([]);
+  const[active,setActive]=useState(true);
+  const[ref,v]=useReveal();
+  useEffect(()=>{
+    if(!v)return;
+    setShown([]);setActive(true);
+    const timers=lines.map(l=>setTimeout(()=>setShown(p=>[...p,l]),l.t));
+    const done=setTimeout(()=>{setActive(false);},9500);
+    return()=>{timers.forEach(clearTimeout);clearTimeout(done);};
+  },[v]);
+  return(
+    <div ref={ref} style={{background:'var(--void)',border:'1px solid var(--wire2)',borderRadius:14,overflow:'hidden',fontFamily:'var(--fm)',fontSize:'.76rem'}}>
+      <div style={{background:'var(--raised)',padding:'.65rem 1.1rem',display:'flex',alignItems:'center',gap:'.55rem',borderBottom:'1px solid var(--wire)'}}>
+        {['#FF5F57','#FEBC2E','#28C840'].map((c,i)=><div key={i} style={{width:11,height:11,borderRadius:'50%',background:c}}/>)}
+        <span style={{marginLeft:'.5rem',color:'var(--ghost)',fontSize:'.65rem',letterSpacing:'.06em'}}>fred_mourad — automation_engine</span>
+        <div style={{marginLeft:'auto',width:7,height:7,borderRadius:'50%',background:active?'var(--lime)':'var(--ghost)',boxShadow:active?'0 0 8px var(--lime)':'none',transition:'all .3s'}}/>
+      </div>
+      <div style={{padding:'1.2rem 1.4rem',minHeight:260,position:'relative'}}>
+        {shown.map((l,i)=>(
+          <div key={i} style={{color:l.c,lineHeight:1.85,animation:'fadeUp .35s ease'}}>
+            {l.text}
+          </div>
+        ))}
+        {active&&<span style={{display:'inline-block',width:7,height:13,background:'var(--fire)',verticalAlign:'middle',animation:'blink 1s infinite',marginLeft:2}}/>}
+        <style>{`
+          @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+          @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
+/* ── WORKFLOW SVG CARD ── */
+function WorkflowSVG(){
+  const nodes=[
+    {x:80,y:44,label:'Schedule',sub:'21:00',icon:'📅',c:'#FF5C35'},
+    {x:80,y:130,label:'Notion DB',sub:'Read rows',icon:'🗄️',c:'#00CFFF'},
+    {x:80,y:216,label:'Groq AI',sub:'Generate',icon:'🤖',c:'#B06EFF'},
+    {x:80,y:302,label:'LinkedIn',sub:'Publish',icon:'💼',c:'#2DFF8F'},
+  ];
+  const[progress,setProgress]=useState(0);
+  const[ref,v]=useReveal();
+  useEffect(()=>{
+    if(!v)return;
+    let p=0,raf;
+    const animate=()=>{p+=.008;if(p>1)p=0;setProgress(p);raf=requestAnimationFrame(animate);};
+    raf=requestAnimationFrame(animate);
+    return()=>cancelAnimationFrame(raf);
+  },[v]);
+  const activeNode=Math.floor(progress*4)%4;
+  return(
+    <div ref={ref} style={{background:'var(--surface)',border:'1px solid var(--wire2)',borderRadius:14,padding:'1.5rem',position:'relative',overflow:'hidden'}}>
+      <div style={{position:'absolute',inset:0,background:'radial-gradient(ellipse 80% 60% at 90% 10%, rgba(255,92,53,.06) 0%, transparent 60%)',pointerEvents:'none'}}/>
+      <div style={{fontFamily:'var(--fm)',fontSize:'.67rem',color:'var(--ghost)',letterSpacing:'.08em',marginBottom:'1.2rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span>// linkedin_content.make</span>
+        <span style={{color:'var(--lime)',display:'flex',alignItems:'center',gap:'.35rem'}}>
+          <span style={{width:5,height:5,borderRadius:'50%',background:'var(--lime)',animation:'pulse2 1.5s infinite',display:'inline-block'}}/>
+          RUNNING
+        </span>
+      </div>
+      <div style={{display:'flex',gap:'1.5rem',alignItems:'stretch'}}>
+        {/* SVG connector */}
+        <svg width="24" height="346" style={{flexShrink:0,marginTop:8}}>
+          <defs>
+            <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#FF5C35" stopOpacity=".8"/>
+              <stop offset="100%" stopColor="#2DFF8F" stopOpacity=".8"/>
+            </linearGradient>
+            <filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feComposite in="SourceGraphic" in2="blur" operator="over"/></filter>
+          </defs>
+          {/* track */}
+          <line x1="12" y1="48" x2="12" y2="298" stroke="rgba(255,255,255,.07)" strokeWidth="1.5" strokeDasharray="4 4"/>
+          {/* animated dot */}
+          <circle cx="12" cy={48+progress*250} r="4" fill="var(--fire)" filter="url(#glow)" opacity={progress>0?1:0}/>
+          {/* node dots */}
+          {nodes.map((n,i)=>(
+            <circle key={i} cx="12" cy={n.y} r={activeNode===i?6:4} fill={activeNode===i?n.c:'var(--raised)'} stroke={n.c} strokeWidth={activeNode===i?0:1.5} style={{transition:'all .3s'}}/>
+          ))}
+        </svg>
+        {/* nodes */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',gap:'.55rem'}}>
+          {nodes.map((n,i)=>(
+            <div key={i} style={{background:activeNode===i?'var(--float)':'var(--raised)',border:`1px solid ${activeNode===i?n.c+'44':'var(--wire)'}`,borderRadius:9,padding:'.6rem .85rem',display:'flex',alignItems:'center',gap:'.6rem',transition:'all .3s',boxShadow:activeNode===i?`0 0 20px ${n.c}22`:' none'}}>
+              <div style={{width:28,height:28,borderRadius:7,background:`${n.c}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.85rem',flexShrink:0}}>{n.icon}</div>
+              <div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'.72rem',color:activeNode===i?'var(--ink)':'var(--ghost2)',transition:'color .3s'}}>{n.label}</div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'.6rem',color:'var(--ghost)',marginTop:'.05rem'}}>{n.sub}</div>
+              </div>
+              {activeNode===i&&<div style={{marginLeft:'auto',width:6,height:6,borderRadius:'50%',background:n.c,boxShadow:`0 0 8px ${n.c}`}}/>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{marginTop:'1.1rem',paddingTop:'1rem',borderTop:'1px solid var(--wire)',display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
+        {[['Make.com','#FF5C35'],['Notion','#00CFFF'],['Groq','#B06EFF'],['LinkedIn','#2DFF8F']].map(([t,c])=>(
+          <span key={t} style={{fontFamily:'var(--fm)',fontSize:'.63rem',padding:'.18rem .5rem',borderRadius:4,background:`${c}12`,border:`1px solid ${c}28`,color:c}}>{t}</span>
+        ))}
+      </div>
+      <style>{`@keyframes pulse2{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.7)}}`}</style>
+    </div>
+  );
+}
+
+/* ── STAT COUNTER ── */
+function StatCounter({value,suffix='',label,delay=0}){
+  const[ref,v]=useReveal();
+  const n=useCounter(parseInt(value)||0,1800,v);
+  return(
+    <div ref={ref} style={{opacity:v?1:0,transform:v?'none':'translateY(20px)',transition:`all .7s cubic-bezier(.16,1,.3,1) ${delay}s`,textAlign:'center'}}>
+      <div style={{fontFamily:'var(--fd)',fontSize:'clamp(2.8rem,5vw,4.2rem)',letterSpacing:'.04em',lineHeight:1,color:'var(--ink)'}}>
+        {typeof value==='string'&&isNaN(parseInt(value))?value:<>{n}<span style={{color:'var(--fire)'}}>{suffix}</span></>}
+      </div>
+      <div style={{fontFamily:'var(--fm)',fontSize:'.65rem',color:'var(--ghost)',letterSpacing:'.12em',textTransform:'uppercase',marginTop:'.4rem'}}>{label}</div>
+    </div>
+  );
+}
+
+/* ── SERVICE CARD ── */
+function SvcCard({icon,num,title,desc,accent='#FF5C35'}){
+  const[h,setH]=useState(false);
+  return(
+    <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} data-hover
+      style={{background:h?'var(--float)':'var(--surface)',border:`1px solid ${h?accent+'33':'var(--wire)'}`,borderRadius:14,padding:'1.8rem',position:'relative',overflow:'hidden',transition:'all .28s cubic-bezier(.16,1,.3,1)',transform:h?'translateY(-5px) scale(1.01)':'none',boxShadow:h?`0 24px 60px rgba(0,0,0,.6), 0 0 40px ${accent}0F`:'none',cursor:'default'}}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${accent},transparent)`,transform:h?'scaleX(1)':'scaleX(0)',transformOrigin:'left',transition:'transform .4s cubic-bezier(.16,1,.3,1)'}}/>
+      <div style={{position:'absolute',bottom:0,right:0,width:120,height:120,background:`radial-gradient(circle,${accent}09 0%,transparent 70%)`,pointerEvents:'none',transition:'opacity .3s',opacity:h?1:0}}/>
+      <span style={{position:'absolute',top:'1.4rem',right:'1.4rem',fontFamily:'var(--fm)',fontSize:'.6rem',color:'var(--wire2)',letterSpacing:'.06em'}}>{num}</span>
+      <div style={{width:46,height:46,borderRadius:11,background:`${accent}14`,border:`1px solid ${accent}22`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.3rem',marginBottom:'1.15rem',transition:'transform .3s',transform:h?'rotate(-8deg) scale(1.1)':'none'}}>{icon}</div>
+      <div style={{fontFamily:'var(--fb)',fontWeight:700,fontSize:'.98rem',marginBottom:'.45rem',color:h?'var(--ink)':'var(--ink)'}}>{title}</div>
+      <div style={{fontSize:'.82rem',color:'var(--ghost2)',lineHeight:1.72}}>{desc}</div>
+    </div>
+  );
+}
+
+/* ── PROJECT CARD ── */
+function ProjectCard({num,icon,icoBg,title,desc,points,tags,url,scenName,stats,accent,btnLabel}){
+  const[h,setH]=useState(false);
+  return(
+    <div onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{background:'var(--surface)',border:`1px solid ${h?accent+'33':'var(--wire)'}`,borderRadius:16,overflow:'hidden',transition:'border-color .3s, box-shadow .3s',boxShadow:h?`0 24px 60px rgba(0,0,0,.6), 0 0 40px ${accent}0A`:'none'}}>
+      <div style={{height:3,background:`linear-gradient(90deg,${accent},${accent}44,transparent)`}}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 270px'}}>
+        {/* LEFT */}
+        <div style={{padding:'2rem 2.4rem'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'.7rem',marginBottom:'1rem',flexWrap:'wrap'}}>
+            <span style={{fontFamily:'var(--fm)',fontSize:'.6rem',color:'var(--ghost)',letterSpacing:'.12em'}}>{num}</span>
+            <span style={{display:'inline-flex',alignItems:'center',gap:'.38rem',padding:'.25rem .7rem',borderRadius:100,background:'rgba(45,255,143,.08)',border:'1px solid rgba(45,255,143,.18)',color:'var(--lime)',fontFamily:'var(--fm)',fontSize:'.63rem'}}>
+              <span style={{width:5,height:5,borderRadius:'50%',background:'var(--lime)',animation:'pulse2 2s infinite',display:'inline-block'}}/>DÉPLOYÉ
+            </span>
+          </div>
+          <div style={{width:52,height:52,borderRadius:13,background:icoBg,border:`1px solid ${accent}22`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.5rem',marginBottom:'1.1rem'}}>{icon}</div>
+          <h3 style={{fontFamily:'var(--fb)',fontWeight:800,fontSize:'1.32rem',letterSpacing:'-.02em',lineHeight:1.2,marginBottom:'.65rem'}}>{title}</h3>
+          <p style={{color:'var(--ghost2)',fontSize:'.84rem',lineHeight:1.8,marginBottom:'1.25rem'}}>{desc}</p>
+          <div style={{marginBottom:'1.25rem'}}>
+            <div style={{fontFamily:'var(--fm)',fontSize:'.62rem',color:accent,letterSpacing:'.12em',textTransform:'uppercase',marginBottom:'.55rem'}}>// FONCTIONNALITÉS</div>
+            {points.map((p,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'flex-start',gap:'.42rem',fontSize:'.82rem',color:'var(--ghost2)',marginBottom:'.3rem'}}>
+                <span style={{color:accent,fontFamily:'var(--fm)',fontSize:'.65rem',flexShrink:0,marginTop:'.18rem'}}>→</span>{p}
+              </div>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:'.35rem',flexWrap:'wrap'}}>
+            {tags.map(([t,c])=><span key={t} style={{fontFamily:'var(--fm)',fontSize:'.63rem',padding:'.18rem .5rem',borderRadius:4,background:`${c}11`,border:`1px solid ${c}25`,color:c}}>{t}</span>)}
+          </div>
+        </div>
+        {/* RIGHT */}
+        <div style={{background:'var(--deep)',borderLeft:'1px solid var(--wire)',padding:'1.8rem',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+          <div>
+            <div style={{background:'var(--void)',border:'1px solid var(--wire)',borderRadius:9,padding:'.85rem 1rem',marginBottom:'1.1rem'}}>
+              <div style={{fontFamily:'var(--fm)',fontSize:'.58rem',color:'var(--ghost)',letterSpacing:'.12em',textTransform:'uppercase',marginBottom:'.5rem'}}>// SCÉNARIO MAKE.COM</div>
+              <div style={{fontFamily:'var(--fm)',fontSize:'.73rem',color:'var(--ink)',marginBottom:'.38rem'}}>{scenName}</div>
+              <div style={{fontFamily:'var(--fm)',fontSize:'.58rem',color:'var(--ghost)',wordBreak:'break-all',lineHeight:1.55,opacity:.7}}>{url.replace('https://','')}</div>
+            </div>
+            <a href={url} target="_blank" rel="noopener" data-hover
+              style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'.42rem',width:'100%',padding:'.78rem',background:accent,color:'#050508',borderRadius:9,textDecoration:'none',fontFamily:'var(--fm)',fontWeight:500,fontSize:'.8rem',letterSpacing:'.06em',boxShadow:`0 0 24px ${accent}33`,transition:'all .25s'}}
+              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow=`0 0 44px ${accent}55`;}}
+              onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow=`0 0 24px ${accent}33`;}}>
+              VOIR LE SCÉNARIO ↗
+            </a>
+          </div>
+          <div style={{display:'flex',gap:'.7rem',marginTop:'1.1rem'}}>
+            {stats.map(([v,l])=>(
+              <div key={l} style={{flex:1,background:'var(--void)',border:'1px solid var(--wire)',borderRadius:8,padding:'.6rem',textAlign:'center'}}>
+                <div style={{fontFamily:'var(--fd)',fontSize:'1.1rem',letterSpacing:'.05em'}}>{v}</div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'.55rem',color:'var(--ghost)',textTransform:'uppercase',letterSpacing:'.08em',marginTop:'.08rem'}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── CONTACT FORM ── */
+function ContactForm(){
+  const[form,setForm]=useState({name:'',email:'',whatsapp:'',service:'',msg:''});
+  const[sent,setSent]=useState(false);
+  const[loading,setLoading]=useState(false);
+  const svcs=['Automatisation Make & n8n','Bot Telegram','Intégration Webhooks/API','Automatisation comptable','Contenu LinkedIn automatisé','Autre'];
+  const submit=()=>{
+    if(!form.name||!form.msg)return;
+    setLoading(true);
+    const txt=`Bonjour Fred,\n\nJe m'appelle ${form.name}${form.email?` (${form.email})`:''}.\n${form.service?`\nService souhaité : ${form.service}\n`:''}\n${form.msg}${form.whatsapp?`\n\nMon WhatsApp : ${form.whatsapp}`:''}`.trim();
+    setTimeout(()=>{setLoading(false);setSent(true);window.open(`https://wa.me/22901052502827?text=${encodeURIComponent(txt)}`,'_blank');},800);
+  };
+  if(sent)return(
+    <div style={{background:'var(--surface)',border:'1px solid var(--wire2)',borderRadius:16,padding:'3rem',textAlign:'center'}}>
+      <div style={{fontSize:'3rem',marginBottom:'1rem'}}>⚡</div>
+      <div style={{fontFamily:'var(--fd)',fontSize:'1.8rem',letterSpacing:'.06em',color:'var(--lime)',marginBottom:'.6rem'}}>MESSAGE ENVOYÉ</div>
+      <p style={{color:'var(--ghost2)',fontSize:'.88rem',lineHeight:1.75,marginBottom:'1.5rem'}}>WhatsApp s'est ouvert avec ton message formaté.<br/>Je te réponds dans les plus brefs délais.</p>
+      <button onClick={()=>{setSent(false);setForm({name:'',email:'',whatsapp:'',service:'',msg:''}); }} data-hover style={{background:'transparent',border:'1px solid var(--wire2)',borderRadius:8,color:'var(--ghost2)',padding:'.5rem 1.2rem',cursor:'pointer',fontFamily:'var(--fm)',fontSize:'.75rem',letterSpacing:'.08em'}}>NOUVEAU MESSAGE</button>
+    </div>
+  );
+  const inp={width:'100%',background:'var(--void)',border:'1px solid var(--wire)',borderRadius:9,padding:'.68rem .9rem',color:'var(--ink)',fontFamily:'var(--fb)',fontSize:'.87rem',outline:'none',transition:'border-color .2s'};
+  return(
+    <div style={{background:'var(--surface)',border:'1px solid var(--wire2)',borderRadius:16,overflow:'hidden'}}>
+      <div style={{background:'linear-gradient(135deg,rgba(255,92,53,.1),rgba(0,207,255,.05))',padding:'1.8rem 2rem',borderBottom:'1px solid var(--wire)'}}>
+        <div style={{display:'inline-flex',alignItems:'center',gap:'.4rem',padding:'.25rem .7rem',borderRadius:100,background:'rgba(45,255,143,.08)',border:'1px solid rgba(45,255,143,.18)',color:'var(--lime)',fontFamily:'var(--fm)',fontSize:'.63rem',marginBottom:'1rem'}}>
+          <span style={{width:5,height:5,borderRadius:'50%',background:'var(--lime)',animation:'pulse2 2s infinite',display:'inline-block'}}/>
+          DISPONIBLE
+        </div>
+        <div style={{fontFamily:'var(--fd)',fontSize:'1.4rem',letterSpacing:'.06em',lineHeight:1.2}}>ENVOIE-MOI UN MESSAGE <span style={{color:'var(--fire)'}}>DIRECT</span></div>
+        <p style={{color:'var(--ghost2)',fontSize:'.81rem',marginTop:'.5rem',lineHeight:1.7}}>Le formulaire prépare un message WhatsApp — tu l'envoies en un clic.</p>
+      </div>
+      <div style={{padding:'1.8rem 2rem'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.9rem',marginBottom:'.9rem'}}>
+          {[['Ton nom *','Ex: Axel','name','text'],['Email','ton@email.com','email','email']].map(([l,ph,k,t])=>(
+            <div key={k}>
+              <div style={{fontFamily:'var(--fm)',fontSize:'.62rem',color:'var(--ghost2)',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:'.38rem'}}>{l}</div>
+              <input type={t} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})} placeholder={ph}
+                style={inp}
+                onFocus={e=>e.target.style.borderColor='rgba(255,92,53,.4)'}
+                onBlur={e=>e.target.style.borderColor='var(--wire)'}/>
+            </div>
+          ))}
+        </div>
+        <div style={{marginBottom:'.9rem'}}>
+          <div style={{fontFamily:'var(--fm)',fontSize:'.62rem',color:'var(--ghost2)',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:'.38rem'}}>WhatsApp (optionnel)</div>
+          <input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="+229 ..." style={inp}
+            onFocus={e=>e.target.style.borderColor='rgba(255,92,53,.4)'}
+            onBlur={e=>e.target.style.borderColor='var(--wire)'}/>
+        </div>
+        <div style={{marginBottom:'.9rem'}}>
+          <div style={{fontFamily:'var(--fm)',fontSize:'.62rem',color:'var(--ghost2)',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:'.38rem'}}>Service souhaité</div>
+          <select value={form.service} onChange={e=>setForm({...form,service:e.target.value})} style={{...inp,appearance:'none',cursor:'pointer'}}>
+            <option value="" style={{background:'#08090F'}}>Sélectionner...</option>
+            {svcs.map(s=><option key={s} value={s} style={{background:'#08090F'}}>{s}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:'1.3rem'}}>
+          <div style={{fontFamily:'var(--fm)',fontSize:'.62rem',color:'var(--ghost2)',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:'.38rem'}}>Ton message *</div>
+          <textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})} placeholder="Décris ton projet ou la tâche que tu veux automatiser..." rows={4}
+            style={{...inp,resize:'vertical',lineHeight:1.72}}
+            onFocus={e=>e.target.style.borderColor='rgba(255,92,53,.4)'}
+            onBlur={e=>e.target.style.borderColor='var(--wire)'}/>
+        </div>
+        <button onClick={submit} data-hover disabled={loading}
+          style={{width:'100%',padding:'.8rem',background:loading?'rgba(255,92,53,.5)':'var(--fire)',color:'#050508',borderRadius:9,border:'none',fontFamily:'var(--fm)',fontSize:'.78rem',letterSpacing:'.1em',fontWeight:700,cursor:loading?'wait':'pointer',boxShadow:'0 0 28px rgba(255,92,53,.3)',transition:'all .22s',display:'flex',alignItems:'center',justifyContent:'center',gap:'.5rem'}}>
+          {loading?'PRÉPARATION...':'ENVOYER VIA WHATSAPP →'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   HOME
+══════════════════════════════════════════ */
+function Home({go}){
+  const svcs=[
+    {icon:'⚙️',num:'01',title:'Automatisation Make & n8n',desc:'Workflows complets qui connectent tes apps, traitent tes données et exécutent tes processus automatiquement, 24h/24.',accent:'#FF5C35'},
+    {icon:'🤖',num:'02',title:'Bots Telegram intelligents',desc:'Bots qui reçoivent des commandes, interrogent des bases de données et répondent sans aucune intervention manuelle.',accent:'#00CFFF'},
+    {icon:'🔗',num:'03',title:'Intégration Webhooks & API',desc:'Connexion d\'applications via webhooks et API REST. Tes outils communiquent en temps réel, sans délai.',accent:'#B06EFF'},
+    {icon:'🧮',num:'04',title:'Automatisation comptable',desc:'Calculs automatiques, rapports à la demande, suivi de trésorerie sans saisie manuelle. Zéro erreur.',accent:'#FF5C35'},
+    {icon:'📱',num:'05',title:'Contenu LinkedIn automatisé',desc:'Tu notes tes idées dans Notion. L\'IA génère les posts. Make publie au bon moment. Zéro effort.',accent:'#2DFF8F'},
+    {icon:'🔔',num:'06',title:'Notifications & alertes auto',desc:'SMS, WhatsApp, emails déclenchés selon des conditions précises. Tes clients informés automatiquement.',accent:'#00CFFF'},
+  ];
+  return(
+    <div>
+      {/* HERO */}
+      <section style={{minHeight:'100vh',display:'flex',alignItems:'center',padding:'clamp(3rem,8vw,6rem) clamp(1.5rem,6%,4.5rem)',position:'relative',overflow:'hidden'}}>
+        {/* grid bg */}
+        <div style={{position:'absolute',inset:0,backgroundImage:'linear-gradient(rgba(255,92,53,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,92,53,.018) 1px,transparent 1px)',backgroundSize:'60px 60px',maskImage:'radial-gradient(ellipse 85% 85% at 50% 50%,black 20%,transparent 100%)',pointerEvents:'none'}}/>
+        {/* vignette */}
+        <div style={{position:'absolute',inset:0,background:'radial-gradient(ellipse 80% 70% at 50% 120%, rgba(255,92,53,.04) 0%, transparent 60%)',pointerEvents:'none'}}/>
+
+        <div style={{maxWidth:1200,margin:'0 auto',width:'100%',display:'grid',gridTemplateColumns:'1fr 460px',gap:'5rem',alignItems:'center',position:'relative',zIndex:1}}>
+          <div>
+            {/* pre-badge */}
+            <div style={{display:'flex',alignItems:'center',gap:'.75rem',marginBottom:'2rem',flexWrap:'wrap'}}>
+              <span style={{display:'inline-flex',alignItems:'center',gap:'.4rem',padding:'.28rem .75rem',borderRadius:100,background:'rgba(45,255,143,.08)',border:'1px solid rgba(45,255,143,.2)',color:'var(--lime)',fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.06em'}}>
+                <span style={{width:5,height:5,borderRadius:'50%',background:'var(--lime)',animation:'pulse2 2s infinite',display:'inline-block'}}/>
+                DISPONIBLE
+              </span>
+              <span style={{display:'inline-flex',alignItems:'center',gap:'.4rem',background:'var(--surface)',border:'1px solid var(--wire2)',borderRadius:8,padding:'.28rem .75rem',fontFamily:'var(--fm)',fontSize:'.65rem',color:'var(--ghost2)'}}>
+                <span style={{width:5,height:5,borderRadius:'50%',background:'var(--fire)',display:'inline-block'}}/>
+                BÉNIN 🇧🇯 · NO-CODE ENGINEER
+              </span>
+            </div>
+
+            {/* MAIN TITLE */}
+            <div style={{fontFamily:'var(--fd)',fontWeight:400,letterSpacing:'.01em',lineHeight:.95,marginBottom:'1.6rem'}}>
+              <div style={{fontSize:'clamp(4rem,9vw,8.5rem)',display:'block',animation:'slideUp .9s cubic-bezier(.16,1,.3,1) .1s both'}}>J'AUTO-</div>
+              <div style={{fontSize:'clamp(4rem,9vw,8.5rem)',display:'block',animation:'slideUp .9s cubic-bezier(.16,1,.3,1) .2s both'}}>
+                <span style={{color:'var(--fire)',position:'relative'}}>
+                  MATISE
+                  <span style={{position:'absolute',inset:0,color:'transparent',WebkitTextStroke:'1px rgba(255,92,53,.3)',animation:'glitch .8s step-end infinite',clipPath:'inset(40% 0 0 0)'}}> MATISE</span>
+                </span>
+              </div>
+              <div style={{fontSize:'clamp(2.5rem,5.5vw,5.5rem)',display:'block',WebkitTextStroke:'1px rgba(255,255,255,.15)',color:'transparent',animation:'slideUp .9s cubic-bezier(.16,1,.3,1) .35s both'}}>CE QUI TE RALENTIT.</div>
+            </div>
+
+            <p style={{color:'var(--ghost2)',fontSize:'1.05rem',maxWidth:490,marginBottom:'2.6rem',lineHeight:1.85,animation:'slideUp .9s cubic-bezier(.16,1,.3,1) .45s both'}}>
+              Expert no-code basé au Bénin. Je construis des workflows Make.com et n8n qui éliminent tes tâches répétitives et font tourner ton activité — même quand tu dors.
+            </p>
+
+            <div style={{display:'flex',gap:'1rem',flexWrap:'wrap',animation:'slideUp .9s cubic-bezier(.16,1,.3,1) .55s both'}}>
+              <div onClick={()=>go('projets')} data-hover style={{display:'inline-flex',alignItems:'center',gap:'.5rem',padding:'.78rem 1.8rem',borderRadius:9,background:'var(--fire)',color:'#050508',fontFamily:'var(--fm)',fontWeight:600,fontSize:'.8rem',letterSpacing:'.1em',cursor:'pointer',boxShadow:'0 0 32px rgba(255,92,53,.35)',transition:'all .22s'}}
+                onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 0 55px rgba(255,92,53,.55)';}}
+                onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 0 32px rgba(255,92,53,.35)';}}>
+                VOIR LES PROJETS →
+              </div>
+              <div onClick={()=>go('moi','contact')} data-hover style={{display:'inline-flex',alignItems:'center',gap:'.5rem',padding:'.78rem 1.8rem',borderRadius:9,background:'transparent',color:'var(--ink)',fontFamily:'var(--fm)',fontSize:'.8rem',letterSpacing:'.1em',cursor:'pointer',border:'1px solid var(--wire2)',transition:'all .22s'}}
+                onMouseEnter={e=>{e.currentTarget.style.background='rgba(255,255,255,.05)';e.currentTarget.style.borderColor='rgba(255,255,255,.2)';}}
+                onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='var(--wire2)';}}>
+                ME CONTACTER
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT CARD */}
+          <R delay={.4}><WorkflowSVG/></R>
+        </div>
+
+        {/* scroll hint */}
+        <div style={{position:'absolute',bottom:'2.5rem',left:'50%',transform:'translateX(-50%)',display:'flex',flexDirection:'column',alignItems:'center',gap:'.5rem',animation:'fadeIn .8s .9s both'}}>
+          <div style={{fontFamily:'var(--fm)',fontSize:'.6rem',letterSpacing:'.16em',color:'var(--ghost)',textTransform:'uppercase'}}>SCROLL</div>
+          <div style={{width:1,height:40,background:'linear-gradient(to bottom,var(--fire),transparent)',animation:'scrollLine 2s ease-in-out infinite'}}/>
+        </div>
+
+        <style>{`
+          @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
+          @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+          @keyframes glitch{0%,90%,100%{clip-path:inset(100% 0 0 0)}92%{clip-path:inset(30% 0 60% 0)}94%{clip-path:inset(70% 0 10% 0)}96%{clip-path:inset(10% 0 80% 0)}98%{clip-path:inset(50% 0 30% 0)}}
+          @keyframes scrollLine{0%,100%{transform:scaleY(1);opacity:1}50%{transform:scaleY(1.3);opacity:.5}}
+        `}</style>
+      </section>
+
+      {/* MARQUEE */}
+      <Marquee/>
+
+      {/* STATS */}
+      <section style={{padding:'5rem clamp(1.5rem,6%,4.5rem)',background:'var(--deep)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto',display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'2rem',position:'relative'}}>
+          <div style={{position:'absolute',left:'25%',top:'50%',width:1,height:'60%',background:'var(--wire)',transform:'translateY(-50%)'}}/> 
+          <div style={{position:'absolute',left:'50%',top:'50%',width:1,height:'60%',background:'var(--wire)',transform:'translateY(-50%)'}}/>
+          <div style={{position:'absolute',left:'75%',top:'50%',width:1,height:'60%',background:'var(--wire)',transform:'translateY(-50%)'}}/>
+          <StatCounter value="3" suffix="+" label="Scénarios déployés" delay={0}/>
+          <StatCounter value="5" suffix="+" label="Services proposés" delay={.1}/>
+          <StatCounter value="0" suffix="h" label="Manuel après livraison" delay={.2}/>
+          <StatCounter value="24/7" label="Workflows actifs" delay={.3}/>
+        </div>
+      </section>
+
+      {/* SERVICES */}
+      <section style={{padding:'clamp(4rem,8vw,7rem) clamp(1.5rem,6%,4.5rem)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto'}}>
+          <R>
+            <div style={{fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.16em',textTransform:'uppercase',color:'var(--fire)',marginBottom:'.9rem',display:'inline-flex',alignItems:'center',gap:'.45rem'}}>
+              <span style={{opacity:.4}}>//</span> SERVICES
+            </div>
+          </R>
+          <R delay={.06}>
+            <h2 style={{fontFamily:'var(--fd)',fontSize:'clamp(3rem,6vw,5.5rem)',letterSpacing:'.03em',lineHeight:.95,marginBottom:'.7rem'}}>
+              CE QUE JE <span style={{color:'var(--fire)'}}>CONSTRUIS</span>
+            </h2>
+          </R>
+          <R delay={.12}>
+            <p style={{color:'var(--ghost2)',maxWidth:500,marginBottom:'3.5rem',fontSize:'.95rem',lineHeight:1.82}}>Des systèmes sur mesure qui travaillent à ta place — connectés, fiables, sans maintenance quotidienne.</p>
+          </R>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'1.1rem'}}>
+            {svcs.map((s,i)=><R key={i} delay={i*.07}><SvcCard {...s}/></R>)}
+          </div>
+
+          {/* CTA band */}
+          <R delay={.1} style={{marginTop:'5rem'}}>
+            <div style={{border:'1px solid rgba(255,92,53,.18)',borderRadius:16,padding:'clamp(2rem,4vw,3rem)',background:'linear-gradient(135deg,rgba(255,92,53,.08) 0%,rgba(0,207,255,.04) 100%)',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'2rem',flexWrap:'wrap',position:'relative',overflow:'hidden'}}>
+              <div style={{position:'absolute',right:0,top:0,width:300,height:'100%',background:'radial-gradient(ellipse at right,rgba(255,92,53,.06) 0%,transparent 70%)',pointerEvents:'none'}}/>
+              <div>
+                <div style={{fontFamily:'var(--fd)',fontSize:'clamp(1.8rem,3.5vw,3rem)',letterSpacing:'.03em',lineHeight:1}}>UN PROJET EN TÊTE ?<br/><span style={{color:'var(--fire)'}}>PARLONS-EN.</span></div>
+                <p style={{color:'var(--ghost2)',fontSize:'.9rem',marginTop:'.7rem'}}>Audit gratuit · Réponse sous 24h · Livraison en 3-5 jours</p>
+              </div>
+              <div onClick={()=>go('moi','contact')} data-hover style={{display:'inline-flex',alignItems:'center',gap:'.5rem',padding:'.82rem 2rem',borderRadius:9,background:'var(--fire)',color:'#050508',fontFamily:'var(--fm)',fontWeight:600,fontSize:'.82rem',letterSpacing:'.1em',cursor:'pointer',boxShadow:'0 0 32px rgba(255,92,53,.35)',transition:'all .22s',flexShrink:0}}
+                onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 0 55px rgba(255,92,53,.5)';}}
+                onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 0 32px rgba(255,92,53,.35)';}}>
+                DÉMARRER →
+              </div>
+            </div>
+          </R>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   PROJECTS
+══════════════════════════════════════════ */
+function Projets(){
+  const[filter,setFilter]=useState('all');
+  const projects=[
+    {id:'telegram',num:'#001',icon:'🤖',icoBg:'rgba(255,92,53,.12)',accent:'#FF5C35',
+     title:'Bot Telegram automatisé',
+     desc:'Scénario Make.com complet pour un bot Telegram. Réception via webhook, parsing des commandes, logique métier et réponse automatique — sans aucune intervention humaine.',
+     points:['Réception des messages via webhook Telegram','Parsing et identification de la commande','Traitement de la logique et récupération des données','Envoi de la réponse formatée à l\'utilisateur','Architecture extensible pour nouvelles commandes'],
+     tags:[['Make.com','#FF5C35'],['Telegram API','#00CFFF'],['Webhooks','#6B7A99'],['JSON parsing','#6B7A99'],['Routing conditionnel','#6B7A99']],
+     url:'https://eu1.make.com/public/shared-scenario/vz5dI9NGKh3/integration-telegram-bot',
+     scenName:'integration-telegram-bot',
+     stats:[['0ms','Manuel'],['24/7','Actif']]},
+    {id:'compta',num:'#002',icon:'🧮',icoBg:'rgba(0,207,255,.1)',accent:'#00CFFF',
+     title:'Calcul & automatisation comptable',
+     desc:'Workflow dédié au traitement comptable automatisé. Récupère les données, applique calculs — totaux, TVA, marges — et génère les résultats sans saisie manuelle.',
+     points:['Récupération des données depuis une source','Calculs automatiques : totaux, taxes, marges','Génération automatique du rapport de résultat','Mise à jour du tableau de bord comptable','Zéro risque d\'erreur de saisie manuelle'],
+     tags:[['Make.com','#00CFFF'],['Comptabilité','#FF5C35'],['Math functions','#6B7A99'],['Google Sheets','#6B7A99'],['Traitement données','#6B7A99']],
+     url:'https://eu1.make.com/public/shared-scenario/ffO1zXrIRw2/calcul-compta',
+     scenName:'calcul-compta',
+     stats:[['Auto','Calculs'],['0%','Erreurs']]},
+    {id:'webhook',num:'#003',icon:'🔗',icoBg:'rgba(45,255,143,.09)',accent:'#2DFF8F',
+     title:'Intégration Webhooks temps réel',
+     desc:'Intégration multi-applications via webhooks. Capte les événements entrants, traite les données en temps réel et redistribue vers les outils cibles en quelques secondes.',
+     points:['Écoute des événements entrants via webhook','Parsing et validation des données reçues','Routage conditionnel selon le type d\'événement','Redistribution vers les applications cibles','Log et traçabilité complète des échanges'],
+     tags:[['Make.com','#2DFF8F'],['Webhooks','#6B7A99'],['API REST','#00CFFF'],['Temps réel','#6B7A99'],['Data routing','#6B7A99']],
+     url:'https://eu1.make.com/public/shared-scenario/iHMfKUdhbpP/integration-webhooks',
+     scenName:'integration-webhooks',
+     stats:[['<1s','Latence'],['Live','Temps réel']]},
+  ];
+  const shown=filter==='all'?projects:projects.filter(p=>p.id===filter);
+  return(
+    <div>
+      <div style={{padding:'clamp(3.5rem,7vw,6rem) clamp(1.5rem,6%,4.5rem) 0'}}>
+        <div style={{maxWidth:1200,margin:'0 auto'}}>
+          <R><div style={{fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.16em',textTransform:'uppercase',color:'var(--fire)',marginBottom:'.9rem',display:'inline-flex',alignItems:'center',gap:'.45em'}}><span style={{opacity:.4}}>//</span> PROJETS</div></R>
+          <R delay={.06}><h1 style={{fontFamily:'var(--fd)',fontSize:'clamp(3.5rem,8vw,7.5rem)',letterSpacing:'.02em',lineHeight:.92}}>SCÉNARIOS <span style={{color:'var(--fire)'}}>DÉPLOYÉS</span></h1></R>
+          <R delay={.12}><p style={{color:'var(--ghost2)',maxWidth:520,marginTop:'1rem',fontSize:'.95rem',lineHeight:1.82}}>Trois workflows Make.com réels, construits et fonctionnels. Clique sur chaque bouton pour voir le scénario directement dans Make.</p></R>
+          <div style={{height:1,background:'linear-gradient(90deg,var(--fire),rgba(255,92,53,.15),transparent)',marginTop:'3rem'}}/>
+        </div>
+      </div>
+
+      {/* FILTERS */}
+      <div style={{padding:'1.4rem clamp(1.5rem,6%,4.5rem)',borderBottom:'1px solid var(--wire)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto',display:'flex',gap:'.45rem',flexWrap:'wrap'}}>
+          {[['all','TOUS'],['telegram','TELEGRAM'],['compta','COMPTABILITÉ'],['webhook','WEBHOOKS']].map(([id,l])=>(
+            <button key={id} onClick={()=>setFilter(id)} data-hover
+              style={{padding:'.3rem .85rem',borderRadius:6,fontFamily:'var(--fm)',fontSize:'.68rem',letterSpacing:'.1em',border:`1px solid ${filter===id?'rgba(255,92,53,.3)':'var(--wire)'}`,background:filter===id?'rgba(255,92,53,.09)':'transparent',color:filter===id?'var(--fire)':'var(--ghost)',cursor:'pointer',transition:'all .2s'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <section style={{padding:'clamp(2.5rem,5vw,5rem) clamp(1.5rem,6%,4.5rem)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto',display:'flex',flexDirection:'column',gap:'2rem'}}>
+          {shown.map((p,i)=><R key={p.id} delay={i*.1}><ProjectCard {...p}/></R>)}
+        </div>
+
+        <R delay={.15} style={{marginTop:'4rem'}}>
+          <div style={{maxWidth:1200,margin:'0 auto',border:'1px dashed var(--wire2)',borderRadius:16,padding:'2.5rem',textAlign:'center',background:'var(--surface)'}}>
+            <div style={{fontFamily:'var(--fd)',fontSize:'1.6rem',letterSpacing:'.05em',color:'var(--ghost)',marginBottom:'.5rem'}}>+ PROJETS À VENIR</div>
+            <p style={{fontSize:'.82rem',color:'var(--ghost)',lineHeight:1.82,marginBottom:'1.4rem'}}>Automatisation contenu LinkedIn · Agent révision médicale Telegram · Prise de rendez-vous · Mini-SaaS cabinet médical</p>
+          </div>
+        </R>
+      </section>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   ABOUT
+══════════════════════════════════════════ */
+function Moi({scrollToContact}){
+  const contactRef=useRef();
+  useEffect(()=>{if(scrollToContact)setTimeout(()=>contactRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),150);},[scrollToContact]);
+
+  const stack=[
+    ['⚙️','Make.com','Plateforme principale',92,'#FF5C35'],
+    ['🔀','n8n','Workflows avancés',76,'#00CFFF'],
+    ['🤖','Telegram API','Bots automatisés',86,'#B06EFF'],
+    ['🔗','Webhooks/REST','Intégrations API',81,'#2DFF8F'],
+    ['🗄️','Notion','Bases de données',89,'#FF5C35'],
+    ['📊','Google Workspace','Sheets · Drive',83,'#00CFFF'],
+    ['🧠','Groq / LLM','Génération IA',74,'#B06EFF'],
+    ['💬','WhatsApp API','Notifications',79,'#2DFF8F'],
+  ];
+  const[barsOn,setBarsOn]=useState(false);
+  const[stackRef,stackVis]=useReveal();
+  useEffect(()=>{if(stackVis)setTimeout(()=>setBarsOn(true),300);},[stackVis]);
+
+  return(
+    <div>
+      {/* HEADER */}
+      <div style={{padding:'clamp(3.5rem,7vw,6rem) clamp(1.5rem,6%,4.5rem) 0'}}>
+        <div style={{maxWidth:1200,margin:'0 auto'}}>
+          <R><div style={{fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.16em',textTransform:'uppercase',color:'var(--fire)',marginBottom:'.9rem',display:'inline-flex',alignItems:'center',gap:'.45em'}}><span style={{opacity:.4}}>//</span> À PROPOS</div></R>
+          <R delay={.06}><h1 style={{fontFamily:'var(--fd)',fontSize:'clamp(3.5rem,8vw,7.5rem)',letterSpacing:'.02em',lineHeight:.92}}>FRED <span style={{color:'var(--fire)'}}>MOURAD</span></h1></R>
+          <R delay={.12}><p style={{color:'var(--ghost2)',maxWidth:540,marginTop:'1rem',fontSize:'.97rem',lineHeight:1.82}}>Étudiant en sciences infirmières. Entrepreneur. Automation engineer. Je combine la rigueur du monde médical avec la précision des systèmes no-code.</p></R>
+          <div style={{height:1,background:'linear-gradient(90deg,var(--fire),rgba(255,92,53,.15),transparent)',marginTop:'3rem'}}/>
+        </div>
+      </div>
+
+      {/* BIO */}
+      <section style={{padding:'clamp(3rem,6vw,6rem) clamp(1.5rem,6%,4.5rem)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto',display:'grid',gridTemplateColumns:'1.1fr 1fr',gap:'5rem',alignItems:'start'}}>
+          <div>
+            <R><div style={{fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.16em',textTransform:'uppercase',color:'var(--fire)',marginBottom:'.9rem',display:'inline-flex',alignItems:'center',gap:'.45em'}}><span style={{opacity:.4}}>//</span> QUI JE SUIS</div></R>
+            <R delay={.06}><p style={{fontSize:'1.08rem',color:'var(--ink)',lineHeight:1.88,marginBottom:'1.4rem',fontWeight:300}}>Je suis <strong style={{color:'var(--fire)',fontWeight:700}}>Fred Mourad</strong>, étudiant en sciences infirmières au Bénin — et automation engineer en parallèle.</p></R>
+            <R delay={.1}><p style={{fontSize:'.9rem',color:'var(--ghost2)',lineHeight:1.88,marginBottom:'1.2rem'}}>J'ai découvert Make.com et n8n en cherchant à automatiser mes propres tâches d'étudiant. Rapidement, j'ai réalisé que ces outils peuvent transformer le quotidien de n'importe quel entrepreneur qui répète les mêmes actions chaque jour.</p></R>
+            <R delay={.14}><p style={{fontSize:'.9rem',color:'var(--ghost2)',lineHeight:1.88,marginBottom:'1.2rem'}}>Aujourd'hui je construis des workflows qui travaillent à la place de mes clients — bots Telegram, automatisations comptables, publications LinkedIn, intégrations API. Des systèmes fiables qui tournent 24h/24.</p></R>
+            <R delay={.18}><p style={{fontSize:'.9rem',color:'var(--ghost2)',lineHeight:1.88,marginBottom:'2rem'}}>Ma particularité : je viens du milieu de la santé. J'ai la rigueur, la précision et le sens du détail que ça demande. Chaque scénario livré est testé, documenté, expliqué.</p></R>
+            <R delay={.22}>
+              <div style={{display:'flex',gap:'.4rem',flexWrap:'wrap',marginBottom:'2rem'}}>
+                {[['Étudiant infirmier','#FF5C35'],['No-code engineer','#00CFFF'],['Entrepreneur','#2DFF8F'],['Bénin 🇧🇯','#6B7A99']].map(([l,c])=>(
+                  <span key={l} style={{fontFamily:'var(--fm)',fontSize:'.64rem',padding:'.2rem .52rem',borderRadius:4,background:`${c}11`,border:`1px solid ${c}28`,color:c}}>{l}</span>
+                ))}
+              </div>
+            </R>
+          </div>
+          <R delay={.2}><LiveTerminal/></R>
+        </div>
+      </section>
+
+      {/* STACK */}
+      <section style={{padding:'clamp(2.5rem,5vw,5.5rem) clamp(1.5rem,6%,4.5rem)',background:'var(--deep)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto'}}>
+          <R><div style={{fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.16em',textTransform:'uppercase',color:'var(--fire)',marginBottom:'.9rem',display:'inline-flex',alignItems:'center',gap:'.45em'}}><span style={{opacity:.4}}>//</span> STACK TECHNIQUE</div></R>
+          <R delay={.06}><h2 style={{fontFamily:'var(--fd)',fontSize:'clamp(2.2rem,5vw,4.5rem)',letterSpacing:'.03em',marginBottom:'2.5rem'}}>LES OUTILS QUE <span style={{color:'var(--fire)'}}>JE MAÎTRISE</span></h2></R>
+          <div ref={stackRef} style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:1,background:'var(--wire)',borderRadius:14,overflow:'hidden'}}>
+            {stack.map(([icon,name,role,pct,c],i)=>(
+              <div key={i} style={{background:'var(--surface)',padding:'1.55rem 1.3rem',textAlign:'center',transition:'background .3s'}}
+                onMouseEnter={e=>e.currentTarget.style.background='var(--float)'}
+                onMouseLeave={e=>e.currentTarget.style.background='var(--surface)'}>
+                <span style={{fontSize:'1.9rem',display:'block',marginBottom:'.65rem'}}>{icon}</span>
+                <div style={{fontFamily:'var(--fm)',fontSize:'.77rem',fontWeight:500,color:'var(--ink)',marginBottom:'.22rem'}}>{name}</div>
+                <div style={{fontSize:'.71rem',color:'var(--ghost)',marginBottom:'.7rem'}}>{role}</div>
+                <div style={{height:2,borderRadius:1,background:'rgba(255,255,255,.07)',overflow:'hidden'}}>
+                  <div style={{height:'100%',background:c,borderRadius:1,width:barsOn?`${pct}%`:'0%',transition:'width 1.3s cubic-bezier(.16,1,.3,1)',boxShadow:`0 0 8px ${c}66`}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PROCESS */}
+      <section style={{padding:'clamp(2.5rem,5vw,5.5rem) clamp(1.5rem,6%,4.5rem)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto'}}>
+          <R><div style={{fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.16em',textTransform:'uppercase',color:'var(--fire)',marginBottom:'.9rem',display:'inline-flex',alignItems:'center',gap:'.45em'}}><span style={{opacity:.4}}>//</span> PROCESSUS</div></R>
+          <R delay={.06}><h2 style={{fontFamily:'var(--fd)',fontSize:'clamp(2.2rem,5vw,4.5rem)',letterSpacing:'.03em',marginBottom:'2.5rem'}}>MON <span style={{color:'var(--fire)'}}>WORKFLOW</span></h2></R>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1.1rem',position:'relative'}}>
+            <div style={{position:'absolute',top:'2.2rem',left:'12.5%',right:'12.5%',height:1,background:'linear-gradient(90deg,var(--fire),rgba(255,92,53,.3),var(--fire))',zIndex:0,opacity:.3}}/>
+            {[['01','Audit gratuit','On discute de tes processus. J\'identifie ce qui peut être automatisé et t\'explique comment.'],
+              ['02','Conception','Je design l\'architecture. Tu valides avant que je construise quoi que ce soit.'],
+              ['03','Construction','Je construis module par module, teste chaque étape. Zéro surprise à la livraison.'],
+              ['04','Livraison & suivi','Je te livre, t\'explique en 15 min et reste disponible pour les ajustements.']].map(([n,t,d],i)=>(
+              <R key={i} delay={i*.08}>
+                <div style={{background:'var(--surface)',border:'1px solid var(--wire)',borderRadius:13,padding:'1.45rem',position:'relative',zIndex:1,transition:'border-color .25s'}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor='rgba(255,92,53,.25)'}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor='var(--wire)'}>
+                  <div style={{width:36,height:36,borderRadius:9,background:'rgba(255,92,53,.1)',border:'1px solid rgba(255,92,53,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:'1rem',color:'var(--fire)',marginBottom:'1rem'}}>{n}</div>
+                  <div style={{fontFamily:'var(--fb)',fontWeight:700,fontSize:'.94rem',marginBottom:'.42rem'}}>{t}</div>
+                  <div style={{fontSize:'.8rem',color:'var(--ghost2)',lineHeight:1.72}}>{d}</div>
+                </div>
+              </R>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CONTACT */}
+      <section ref={contactRef} style={{padding:'clamp(2.5rem,5vw,5.5rem) clamp(1.5rem,6%,4.5rem)',background:'var(--deep)'}}>
+        <div style={{maxWidth:1200,margin:'0 auto'}}>
+          <R><div style={{fontFamily:'var(--fm)',fontSize:'.65rem',letterSpacing:'.16em',textTransform:'uppercase',color:'var(--fire)',marginBottom:'.9rem',display:'inline-flex',alignItems:'center',gap:'.45em'}}><span style={{opacity:.4}}>//</span> CONTACT</div></R>
+          <R delay={.06}><h2 style={{fontFamily:'var(--fd)',fontSize:'clamp(2.2rem,5vw,4.5rem)',letterSpacing:'.03em',marginBottom:'3rem'}}>PARLONS DE TON <span style={{color:'var(--fire)'}}>PROJET</span></h2></R>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4rem',alignItems:'start'}}>
+            <R>
+              <p style={{color:'var(--ghost2)',fontSize:'.92rem',lineHeight:1.85,marginBottom:'2rem'}}>Tu as un processus répétitif qui te coûte du temps ? Une idée d'automatisation ? Écris-moi directement — je réponds rapidement et l'audit initial est gratuit.</p>
+              <div style={{display:'flex',flexDirection:'column',gap:'.85rem',marginBottom:'2rem'}}>
+                {[
+                  {ico:'💬',lbl:'WHATSAPP — RÉPONSE RAPIDE',val:'+229 01 52 50 28 27',href:'https://wa.me/22901052502827',ac:'rgba(37,211,102,.1)',ab:'rgba(37,211,102,.2)'},
+                  {ico:'👤',lbl:'FACEBOOK',val:'ADJINANOUKON Fred',href:'https://www.facebook.com/search/top?q=ADJINANOUKON+Fred',ac:'rgba(24,119,242,.1)',ab:'rgba(24,119,242,.2)'},
+                  {ico:'📸',lbl:'INSTAGRAM',val:'@fred_mourad_',href:'https://instagram.com/fred_mourad_',ac:'rgba(225,48,108,.1)',ab:'rgba(225,48,108,.2)'},
+                ].map((c,i)=>(
+                  <a key={i} href={c.href} target="_blank" rel="noopener" data-hover
+                    style={{display:'flex',alignItems:'center',gap:'.95rem',padding:'1.05rem 1.3rem',background:'var(--surface)',border:'1px solid var(--wire)',borderRadius:13,textDecoration:'none',color:'var(--ink)',transition:'all .28s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(255,92,53,.25)';e.currentTarget.style.transform='translateX(5px)';e.currentTarget.style.background='var(--raised)';}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--wire)';e.currentTarget.style.transform='none';e.currentTarget.style.background='var(--surface)';}}>
+                    <div style={{width:42,height:42,borderRadius:10,background:c.ac,border:`1px solid ${c.ab}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.1rem',flexShrink:0}}>{c.ico}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:'var(--fm)',fontSize:'.6rem',color:'var(--ghost)',letterSpacing:'.12em',marginBottom:'.12rem'}}>{c.lbl}</div>
+                      <div style={{fontWeight:600,fontSize:'.88rem'}}>{c.val}</div>
+                    </div>
+                    <span style={{color:'var(--ghost)',fontSize:'.8rem'}}>↗</span>
+                  </a>
+                ))}
+              </div>
+
+              {/* Quick facts */}
+              <div style={{background:'var(--surface)',border:'1px solid var(--wire)',borderRadius:13,padding:'1.4rem'}}>
+                <div style={{fontFamily:'var(--fm)',fontSize:'.62rem',color:'var(--fire)',letterSpacing:'.12em',textTransform:'uppercase',marginBottom:'1rem'}}>// POURQUOI ME CHOISIR</div>
+                {[['⚡','Réponse sous 24h'],['🔍','Audit gratuit de tes processus'],['📦','Livraison en 3-5 jours'],['🛡️','1 mois de suivi inclus'],['📖','Système documenté et expliqué']].map(([ic,t])=>(
+                  <div key={t} style={{display:'flex',alignItems:'center',gap:'.75rem',fontSize:'.84rem',color:'var(--ghost2)',marginBottom:'.65rem'}}>
+                    <span style={{fontSize:'1rem'}}>{ic}</span>{t}
+                  </div>
+                ))}
+              </div>
+            </R>
+            <R delay={.15}><ContactForm/></R>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   APP
+══════════════════════════════════════════ */
+function App(){
+  const[page,setPage]=useState('home');
+  const[stc,setStc]=useState(null);
+  const go=useCallback((p,anchor=null)=>{
+    setPage(p);setStc(anchor);
+    window.scrollTo({top:0,behavior:'instant'});
+  },[]);
+  return(
+    <>
+      <ParticleField/>
+      <Nav page={page} go={go}/>
+      <main style={{position:'relative',zIndex:1,paddingTop:64}}>
+        {page==='home'&&<Home go={go}/>}
+        {page==='projets'&&<Projets/>}
+        {page==='moi'&&<Moi scrollToContact={stc==='contact'}/>}
+      </main>
+      <footer style={{position:'relative',zIndex:1,padding:'1.8rem clamp(1.5rem,6%,4.5rem)',borderTop:'1px solid var(--wire)',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'1rem',background:'var(--void)'}}>
+        <div onClick={()=>go('home')} data-hover style={{fontFamily:'var(--fd)',fontSize:'1.1rem',letterSpacing:'.06em',cursor:'pointer'}}>FRED<span style={{color:'var(--fire)'}}>.</span></div>
+        <div style={{fontFamily:'var(--fm)',fontSize:'.68rem',color:'var(--ghost)',letterSpacing:'.08em'}}>© 2026 — AUTOMATION NO-CODE · BÉNIN 🇧🇯</div>
+      </footer>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
